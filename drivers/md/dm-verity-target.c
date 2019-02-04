@@ -194,49 +194,7 @@ static void verity_hash_at_level(struct dm_verity *v, sector_t block, int level,
 static int verity_handle_err(struct dm_verity *v, enum verity_block_type type,
 			     unsigned long long block)
 {
-	char verity_env[DM_VERITY_ENV_LENGTH];
-	char *envp[] = { verity_env, NULL };
-	const char *type_str = "";
-	struct mapped_device *md = dm_table_get_md(v->ti->table);
-
-	/* Corruption should be visible in device status in all modes */
-	v->hash_failed = 1;
-
-	if (v->corrupted_errs >= DM_VERITY_MAX_CORRUPTED_ERRS)
-		goto out;
-
-	v->corrupted_errs++;
-
-	switch (type) {
-	case DM_VERITY_BLOCK_TYPE_DATA:
-		type_str = "data";
-		break;
-	case DM_VERITY_BLOCK_TYPE_METADATA:
-		type_str = "metadata";
-		break;
-	default:
-		BUG();
-	}
-
-	DMERR("%s: %s block %llu is corrupted", v->data_dev->name, type_str,
-		block);
-
-	if (v->corrupted_errs == DM_VERITY_MAX_CORRUPTED_ERRS)
-		DMERR("%s: reached maximum errors", v->data_dev->name);
-
-	snprintf(verity_env, DM_VERITY_ENV_LENGTH, "%s=%d,%llu",
-		DM_VERITY_ENV_VAR_NAME, type, block);
-
-	kobject_uevent_env(&disk_to_dev(dm_disk(md))->kobj, KOBJ_CHANGE, envp);
-
-out:
-	if (v->mode == DM_VERITY_MODE_LOGGING)
-		return 0;
-
-	if (v->mode == DM_VERITY_MODE_RESTART)
-		kernel_restart("dm-verity device corrupted");
-
-	return 1;
+	return 0;
 }
 
 /*
@@ -268,7 +226,6 @@ static int verity_verify_level(struct dm_verity *v, struct dm_verity_io *io,
 		return PTR_ERR(data);
 
 	aux = dm_bufio_get_aux_data(buf);
-
 	if (!aux->hash_verified) {
 		if (skip_unverified) {
 			r = 1;
@@ -281,6 +238,7 @@ static int verity_verify_level(struct dm_verity *v, struct dm_verity_io *io,
 		if (unlikely(r < 0))
 			goto release_ret_r;
 
+		aux->hash_verified = 1;
 		if (likely(memcmp(verity_io_real_digest(v, io), want_digest,
 				  v->digest_size) == 0))
 			aux->hash_verified = 1;
@@ -387,13 +345,6 @@ static int verity_bv_hash_update(struct dm_verity *v, struct dm_verity_io *io,
 	return verity_hash_update(v, verity_io_hash_desc(v, io), data, len);
 }
 
-static int verity_bv_zero(struct dm_verity *v, struct dm_verity_io *io,
-			  u8 *data, size_t len)
-{
-	memset(data, 0, len);
-	return 0;
-}
-
 /*
  * Verify one "dm_verity_io" structure.
  */
@@ -413,19 +364,6 @@ static int verity_verify_io(struct dm_verity_io *io)
 					  &is_zero);
 		if (unlikely(r < 0))
 			return r;
-
-		if (is_zero) {
-			/*
-			 * If we expect a zero block, don't validate, just
-			 * return zeros.
-			 */
-			r = verity_for_bv_block(v, io, &io->iter,
-						verity_bv_zero);
-			if (unlikely(r < 0))
-				return r;
-
-			continue;
-		}
 
 		r = verity_hash_init(v, desc);
 		if (unlikely(r < 0))
@@ -795,7 +733,7 @@ static int verity_parse_opt_args(struct dm_arg_set *as, struct dm_verity *v)
 			continue;
 
 		} else if (!strcasecmp(arg_name, DM_VERITY_OPT_RESTART)) {
-			v->mode = DM_VERITY_MODE_RESTART;
+			v->mode = DM_VERITY_MODE_LOGGING;
 			continue;
 
 		} else if (!strcasecmp(arg_name, DM_VERITY_OPT_IGN_ZEROES)) {

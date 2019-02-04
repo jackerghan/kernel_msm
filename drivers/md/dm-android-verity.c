@@ -47,7 +47,7 @@ static char veritykeyid[VERITY_DEFAULT_KEY_ID_LENGTH];
 static char buildvariant[BUILD_VARIANT];
 
 static bool target_added;
-static bool verity_enabled = true;
+static bool verity_enabled = false;
 struct dentry *debug_dir;
 static int android_verity_ctr(struct dm_target *ti, unsigned argc, char **argv);
 
@@ -104,18 +104,13 @@ static inline bool default_verity_key_id(void)
 
 static inline bool is_eng(void)
 {
-	static const char typeeng[]  = "eng";
-
-	return !strncmp(buildvariant, typeeng, sizeof(typeeng));
+	return true;
 }
 
 static inline bool is_userdebug(void)
 {
-	static const char typeuserdebug[]  = "userdebug";
-
-	return !strncmp(buildvariant, typeuserdebug, sizeof(typeuserdebug));
+	return true;
 }
-
 
 static int table_extract_mpi_array(struct public_key_signature *pks,
 				const void *data, size_t len)
@@ -369,8 +364,7 @@ static int verify_header(struct android_metadata_header *header)
 {
 	int retval = -EINVAL;
 
-	if (is_userdebug() && le32_to_cpu(header->magic_number) ==
-			VERITY_METADATA_MAGIC_DISABLE)
+	if (is_userdebug())
 		return VERITY_STATE_DISABLE;
 
 	if (!(le32_to_cpu(header->magic_number) ==
