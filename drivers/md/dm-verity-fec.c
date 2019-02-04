@@ -20,7 +20,7 @@
  */
 bool verity_fec_is_enabled(struct dm_verity *v)
 {
-	return v->fec && v->fec->dev;
+	return false;
 }
 
 /*
