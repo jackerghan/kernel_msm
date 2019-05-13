@@ -2288,7 +2288,7 @@ oom:
 	return VM_FAULT_OOM;
 }
 
-static void unmap_mapping_range_vma(struct vm_area_struct *vma,
+void unmap_mapping_range_vma(struct vm_area_struct *vma,
 		unsigned long start_addr, unsigned long end_addr,
 		struct zap_details *details)
 {
