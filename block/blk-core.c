@@ -2076,6 +2076,8 @@ out:
 }
 EXPORT_SYMBOL(generic_make_request);
 
+
+
 /**
  * submit_bio - submit a bio to the block device layer for I/O
  * @bio: The &struct bio which describes the I/O
@@ -2085,6 +2087,8 @@ EXPORT_SYMBOL(generic_make_request);
  * interfaces; @bio must be presetup and ready for I/O.
  *
  */
+void end_bio_bh_io_sync(struct bio *bio, int err);
+void ext4_trace_inode_path(struct file *filp, struct inode *inode);
 blk_qc_t submit_bio(struct bio *bio)
 {
 	/*
@@ -2093,6 +2097,30 @@ blk_qc_t submit_bio(struct bio *bio)
 	 */
 	if (bio_has_data(bio)) {
 		unsigned int count;
+		if (atomic_read(&__tracepoint_block_bio_submit.key.enabled) > 0) {
+			struct page *page = bio_page(bio);
+			struct address_space *mapping = page ? page_mapping(page) : NULL;
+			struct inode *inode = mapping ? mapping->host : NULL;
+			unsigned long ino = 0;
+			char *name = "";
+			if (inode) {
+				if (!inode->i_ino) {
+					if ((void*)bio->bi_end_io == (void*)end_bio_bh_io_sync) {
+						struct buffer_head *bh = bio->bi_private;
+						if (bh->b_ino) {
+							ino = bh->b_ino;
+						}
+						if (bh->b_name) {
+							name = bh->b_name;
+						}
+					}
+				} else {
+					ino = inode->i_ino;
+					ext4_trace_inode_path(NULL, inode);
+				}
+				trace_block_bio_submit(bio, ino, name);
+			}
+		}
 
 		if (unlikely(bio_op(bio) == REQ_OP_WRITE_SAME))
 			count = bdev_logical_block_size(bio->bi_bdev) >> 9;

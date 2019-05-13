@@ -1305,6 +1305,7 @@ static void requeue_inode(struct inode *inode, struct bdi_writeback *wb,
  * linkage. That is left to the caller. The caller is also responsible for
  * setting I_SYNC flag and calling inode_sync_complete() to clear it.
  */
+void ext4_trace_inode_path(struct file *filp, struct inode *inode);
 static int
 __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
 {
@@ -1315,6 +1316,7 @@ __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
 
 	WARN_ON(!(inode->i_state & I_SYNC));
 
+	ext4_trace_inode_path(NULL, inode);
 	trace_writeback_single_inode_start(inode, wbc, nr_to_write);
 
 	ret = do_writepages(mapping, wbc);

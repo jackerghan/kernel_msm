@@ -2529,6 +2529,32 @@ TRACE_EVENT(ext4_es_shrink,
 		  __entry->scan_time, __entry->nr_skipped, __entry->retried)
 );
 
+TRACE_EVENT(ext4_inode_path,
+	TP_PROTO(struct inode *inode, int version, char *path),
+
+	TP_ARGS(inode, version, path),
+
+	TP_STRUCT__entry(
+		__field(	dev_t,	dev			)
+		__field(	ino_t,	ino			)
+		__field(	  int,	version	)
+		__string(	 path,	path	)
+	),
+
+	TP_fast_assign(
+		__entry->dev		= inode->i_sb->s_dev;
+		__entry->ino		= inode->i_ino;
+		__entry->version		= version;
+		__assign_str(path, path);
+	),
+
+	TP_printk("%d,%d %lu %d %s",
+		  MAJOR(__entry->dev), MINOR(__entry->dev),
+		  (unsigned long) __entry->ino,
+			__entry->version,
+		  __get_str(path))
+);
+
 #endif /* _TRACE_EXT4_H */
 
 /* This part must be outside protection */

@@ -739,8 +739,14 @@ static inline void ftrace_trace_stack(struct trace_array *tr,
 
 #endif
 
+atomic_t global_trace_version;
+
 static void tracer_tracing_on(struct trace_array *tr)
 {
+	if (tr == &global_trace) {
+		atomic_inc(&global_trace_version);
+	}
+	
 	if (tr->trace_buffer.buffer)
 		ring_buffer_record_on(tr->trace_buffer.buffer);
 	/*

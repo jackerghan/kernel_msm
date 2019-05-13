@@ -75,6 +75,8 @@ struct buffer_head {
 	struct address_space *b_assoc_map;	/* mapping this buffer is
 						   associated with */
 	atomic_t b_count;		/* users using this buffer_head */
+	char* b_name;
+	unsigned long b_ino;
 };
 
 /*

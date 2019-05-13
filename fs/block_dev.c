@@ -312,9 +312,11 @@ static int blkdev_writepage(struct page *page, struct writeback_control *wbc)
 	return block_write_full_page(page, blkdev_get_block, wbc);
 }
 
+int __block_read_full_page(struct page *page, get_block_t *get_block, struct file *file);
+
 static int blkdev_readpage(struct file * file, struct page * page)
 {
-	return block_read_full_page(page, blkdev_get_block);
+	return __block_read_full_page(page, blkdev_get_block, file);
 }
 
 static int blkdev_readpages(struct file *file, struct address_space *mapping,
