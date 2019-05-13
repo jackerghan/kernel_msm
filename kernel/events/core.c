@@ -60,6 +60,10 @@ struct remote_function_call {
 	int			ret;
 };
 
+static int no_stacks_for_current_task(void ) {
+	return (strcmp(current->comm, "simpleperf") == 0);
+}
+
 static void remote_function(void *data)
 {
 	struct remote_function_call *tfc = data;
@@ -5663,6 +5667,10 @@ perf_sample_ustack_size(u16 stack_size, u16 header_size,
 	if (!regs)
 		return 0;
 
+	if (no_stacks_for_current_task()) {
+		return 0;
+	}
+
 	/*
 	 * Check if we fit in with the requested stack size into the:
 	 * - TASK_SIZE
@@ -5697,7 +5705,7 @@ perf_output_sample_ustack(struct perf_output_handle *handle, u64 dump_size,
 			  struct pt_regs *regs)
 {
 	/* Case of a kernel thread, nothing to dump */
-	if (!regs) {
+	if (!regs || no_stacks_for_current_task()) {
 		u64 size = 0;
 		perf_output_put(handle, size);
 	} else {
