@@ -425,8 +425,14 @@ unsigned long trace_flags = TRACE_ITER_PRINT_PARENT | TRACE_ITER_PRINTK |
 	TRACE_ITER_GRAPH_TIME | TRACE_ITER_RECORD_CMD | TRACE_ITER_OVERWRITE |
 	TRACE_ITER_IRQ_INFO | TRACE_ITER_MARKERS | TRACE_ITER_FUNCTION;
 
+atomic_t global_trace_version;
+
 static void tracer_tracing_on(struct trace_array *tr)
 {
+	if (tr == &global_trace) {
+		atomic_inc(&global_trace_version);
+	}
+	
 	if (tr->trace_buffer.buffer)
 		ring_buffer_record_on(tr->trace_buffer.buffer);
 	/*

@@ -1547,6 +1547,8 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
 	struct ext4_dir_entry_2 *de;
 	struct buffer_head *bh;
 
+	ext4_trace_inode_path(NULL, dir);
+
        if (ext4_encrypted_inode(dir)) {
                int res = ext4_get_encryption_info(dir);
 

@@ -667,8 +667,35 @@ TRACE_EVENT(block_rq_remap,
 		  (unsigned long long)__entry->old_sector, __entry->nr_bios)
 );
 
+TRACE_EVENT(block_bio_submit,
+
+	TP_PROTO(struct bio *bio, unsigned long ino, char* name),
+
+	TP_ARGS(bio, ino, name),
+
+	TP_STRUCT__entry(
+		__field( dev_t,		 dev )
+		__field( sector_t, sector )
+		__field( unsigned int, nr_sector )
+		__field( unsigned long, ino )
+		__string( name, name )
+	),
+
+	TP_fast_assign(
+		__entry->dev		= bio->bi_bdev ? bio->bi_bdev->bd_dev : 0;
+		__entry->sector		= bio->bi_iter.bi_sector;
+		__entry->nr_sector	= bio_sectors(bio);
+		__entry->ino	= ino;
+		__assign_str(name, name);
+	),
+
+	TP_printk("%d,%d %llu + %u %lu [%s]",
+		  MAJOR(__entry->dev), MINOR(__entry->dev),
+		  (unsigned long long)__entry->sector, __entry->nr_sector,
+		  (unsigned long)__entry->ino, __get_str(name))
+);
+
 #endif /* _TRACE_BLOCK_H */
 
 /* This part must be outside protection */
 #include <trace/define_trace.h>
-
