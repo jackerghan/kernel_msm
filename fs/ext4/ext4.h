@@ -2187,6 +2187,22 @@ struct mmpd_data {
 # define ATTRIB_NORET	__attribute__((noreturn))
 # define NORET_AND	noreturn,
 
+void ext4_trace_inode_path(struct file *filp, struct inode *inode);
+static inline struct buffer_head *
+ext4_sb_getblk(struct super_block *sb, sector_t block, struct inode* inode, char* name)
+{
+	struct buffer_head *bh = sb_getblk(sb, block);
+	if (bh) {
+		if (inode) {
+			ext4_trace_inode_path(NULL, inode);
+		}
+
+		bh->b_ino = inode ? inode->i_ino : 0;
+		bh->b_name = name;
+	}
+	return bh;
+}
+
 /* bitmap.c */
 extern unsigned int ext4_count_free(char *bitmap, unsigned numchars);
 void ext4_inode_bitmap_csum_set(struct super_block *sb, ext4_group_t group,

@@ -154,6 +154,7 @@ static int journal_submit_commit_record(journal_t *journal,
 	clear_buffer_dirty(bh);
 	set_buffer_uptodate(bh);
 	bh->b_end_io = journal_end_buffer_io_sync;
+	bh->b_name = "journal";
 
 	if (journal->j_flags & JBD2_BARRIER &&
 	    !jbd2_has_feature_async_commit(journal))
@@ -737,6 +738,7 @@ start_journal_io:
 				clear_buffer_dirty(bh);
 				set_buffer_uptodate(bh);
 				bh->b_end_io = journal_end_buffer_io_sync;
+				bh->b_name = "journal";
 				submit_bh(WRITE_SYNC, bh);
 			}
 			cond_resched();

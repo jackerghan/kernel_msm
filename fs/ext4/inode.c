@@ -46,6 +46,8 @@
 
 #include <trace/events/ext4.h>
 #include <trace/events/android_fs.h>
+#include "../internal.h"
+#include "../mount.h"
 
 #define MPAGE_DA_EXTENT_TAIL 0x01
 
@@ -756,6 +758,8 @@ static int _ext4_get_block(struct inode *inode, sector_t iblock,
 		if (io_end && io_end->flag & EXT4_IO_END_UNWRITTEN)
 			set_buffer_defer_completion(bh);
 		bh->b_size = inode->i_sb->s_blocksize * map.m_len;
+		bh->b_ino = inode->i_ino;
+		ext4_trace_inode_path(NULL, inode);
 		ret = 0;
 	}
 	if (started)
@@ -792,7 +796,7 @@ struct buffer_head *ext4_getblk(handle_t *handle, struct inode *inode,
 	if (err < 0)
 		return ERR_PTR(err);
 
-	bh = sb_getblk(inode->i_sb, map.m_pblk);
+	bh = ext4_sb_getblk(inode->i_sb, map.m_pblk, inode, 0);
 	if (unlikely(!bh))
 		return ERR_PTR(-ENOMEM);
 	if (map.m_flags & EXT4_MAP_NEW) {
@@ -2740,6 +2744,52 @@ static int ext4_nonda_switch(struct super_block *sb)
 		return 1;
 	}
 	return 0;
+}
+
+extern atomic_t global_trace_version;
+void ext4_trace_inode_path(struct file *filp, struct inode *inode)
+{
+	if (!inode) {
+		return;
+	}
+
+	if (atomic_read(&__tracepoint_ext4_inode_path.key.enabled) > 0) {
+		int trace_version = atomic_read(&global_trace_version);
+		if (trace_version > inode->i_path_traced_version) {
+			struct path file_path = {};
+
+			// If we have a file, use the alias/root it has. Otherwise try to get any name for the inode.
+			if (filp) {
+				file_path = filp->f_path;
+				path_get(&file_path);
+			} else {
+				struct mount *m = NULL;
+				struct vfsmount *mnt = NULL;
+				lock_mount_hash();
+				m = list_first_entry_or_null(&inode->i_sb->s_mounts, struct mount, mnt_instance);
+				if (m) {
+					mnt = mntget(&m->mnt);
+				}
+				unlock_mount_hash();
+				file_path.mnt = mnt;
+				file_path.dentry = d_find_alias(inode);
+			}
+
+			if (file_path.dentry && file_path.mnt) {
+		    char buf[256];
+		    char* path = d_path(&file_path, buf, ARRAY_SIZE(buf));
+		    if (IS_ERR(path)) {
+		      snprintf(buf, ARRAY_SIZE(buf), "<error:%ld>", PTR_ERR(path));
+		      path = buf;
+		    }
+
+		    trace_ext4_inode_path(inode, trace_version, path);
+		    inode->i_path_traced_version = trace_version;
+		  }
+
+			path_put(&file_path);
+		}
+	}
 }
 
 /* We always reserve for an inode update; the superblock could be there too */
