@@ -1944,6 +1944,8 @@ static inline struct task_struct *get_dirty_task(struct bio *bio)
 }
 #endif
 
+
+
 /**
  * submit_bio - submit a bio to the block device layer for I/O
  * @rw: whether to %READ or %WRITE, or maybe to %READA (read ahead)
@@ -1954,6 +1956,8 @@ static inline struct task_struct *get_dirty_task(struct bio *bio)
  * interfaces; @bio must be presetup and ready for I/O.
  *
  */
+void end_bio_bh_io_sync(struct bio *bio, int err);
+void ext4_trace_inode_path(struct file *filp, struct inode *inode);
 void submit_bio(int rw, struct bio *bio)
 {
 	bio->bi_rw |= rw;
@@ -1964,6 +1968,30 @@ void submit_bio(int rw, struct bio *bio)
 	 */
 	if (bio_has_data(bio)) {
 		unsigned int count;
+		if (atomic_read(&__tracepoint_block_bio_submit.key.enabled) > 0) {
+			struct page *page = bio_page(bio);
+			struct address_space *mapping = page ? page_mapping(page) : NULL;
+			struct inode *inode = mapping ? mapping->host : NULL;
+			unsigned long ino = 0;
+			char *name = "";
+			if (inode) {
+				if (!inode->i_ino) {
+					if ((void*)bio->bi_end_io == (void*)end_bio_bh_io_sync) {
+						struct buffer_head *bh = bio->bi_private;
+						if (bh->b_ino) {
+							ino = bh->b_ino;
+						}
+						if (bh->b_name) {
+							name = bh->b_name;
+						}
+					}
+				} else {
+					ino = inode->i_ino;
+					ext4_trace_inode_path(NULL, inode);
+				}
+				trace_block_bio_submit(bio, ino, name);
+			}
+		}
 
 		if (unlikely(rw & REQ_WRITE_SAME))
 			count = bdev_logical_block_size(bio->bi_bdev) >> 9;

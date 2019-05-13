@@ -2205,7 +2205,8 @@ EXPORT_SYMBOL(block_is_partially_uptodate);
  * set/clear_buffer_uptodate() functions propagate buffer state into the
  * page struct once IO has completed.
  */
-int block_read_full_page(struct page *page, get_block_t *get_block)
+void ext4_trace_inode_path(struct file *filp, struct inode *inode);
+int __block_read_full_page(struct page *page, get_block_t *get_block, struct file *file)
 {
 	struct inode *inode = page->mapping->host;
 	sector_t iblock, lblock;
@@ -2213,7 +2214,13 @@ int block_read_full_page(struct page *page, get_block_t *get_block)
 	unsigned int blocksize, bbits;
 	int nr, i;
 	int fully_mapped = 1;
+	unsigned long ino = inode->i_ino;
 
+	if (file && file_inode(file)) {
+		ext4_trace_inode_path(file, file_inode(file));
+		ino = file_inode(file)->i_ino;
+	}
+	
 	head = create_page_buffers(page, inode, 0);
 	blocksize = head->b_size;
 	bbits = block_size_bits(blocksize);
@@ -2225,6 +2232,7 @@ int block_read_full_page(struct page *page, get_block_t *get_block)
 	i = 0;
 
 	do {
+		bh->b_ino = ino;
 		if (buffer_uptodate(bh))
 			continue;
 
@@ -2288,6 +2296,11 @@ int block_read_full_page(struct page *page, get_block_t *get_block)
 			submit_bh(READ, bh);
 	}
 	return 0;
+}
+
+int block_read_full_page(struct page *page, get_block_t *get_block)
+{
+		return __block_read_full_page(page, get_block, 0);
 }
 EXPORT_SYMBOL(block_read_full_page);
 
@@ -2983,7 +2996,7 @@ sector_t generic_block_bmap(struct address_space *mapping, sector_t block,
 }
 EXPORT_SYMBOL(generic_block_bmap);
 
-static void end_bio_bh_io_sync(struct bio *bio, int err)
+void end_bio_bh_io_sync(struct bio *bio, int err)
 {
 	struct buffer_head *bh = bio->bi_private;
 
