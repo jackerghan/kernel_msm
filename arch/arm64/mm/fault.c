@@ -237,8 +237,10 @@ static void do_bad_area(unsigned long addr, unsigned int esr, struct pt_regs *re
 
 #define VM_FAULT_BADMAP		0x010000
 #define VM_FAULT_BADACCESS	0x020000
+#define VM_FAULT_LOG_VMOPS  0x1000000
+#define VM_FAULT_LOG_USER   0x2000000
 
-static int __do_page_fault(struct mm_struct *mm, unsigned long addr,
+static int __do_page_fault(struct mm_struct *mm, unsigned long addr, unsigned long faulting_pc,
 			   unsigned int mm_flags, unsigned long vm_flags,
 			   struct task_struct *tsk)
 {
@@ -267,7 +269,46 @@ good_area:
 		goto out;
 	}
 
-	return handle_mm_fault(mm, vma, addr & PAGE_MASK, mm_flags);
+	fault = handle_mm_fault(mm, vma, addr & PAGE_MASK, mm_flags);
+	if (!(fault & VM_FAULT_ERROR) && mm_flags & FAULT_FLAG_ALLOW_RETRY) {
+		// Only want to log interesting faults: mapped or any hardfault for now.
+		// Later it may be interesting to log COW, stack growth etc.
+		if (atomic_read(&__tracepoint_page_fault_filt.key.enabled) > 0) {
+			int simpleperf = !strcmp(current->comm, "simpleperf");
+			if (!simpleperf && ((fault & VM_FAULT_MAJOR) || vma->vm_ops)) {
+				// Only log interesting faults: hard faults and ...
+				int log_flags = fault;
+				char* path = "";
+				char buf[256];
+				dev_t dev = 0;
+				ino_t ino = 0;
+				unsigned long vma_pgoff = 0;
+
+				if (vma->vm_ops) {
+					log_flags |= VM_FAULT_LOG_VMOPS;
+				}
+				if (mm_flags & FAULT_FLAG_USER) {
+					log_flags |= VM_FAULT_LOG_USER;
+				}
+
+				if (vma->vm_file && vma->vm_file->f_mapping && vma->vm_file->f_mapping->host) {
+					struct inode *inode = vma->vm_file->f_mapping->host;
+					dev = inode->i_sb->s_dev;
+					ino = inode->i_ino;
+					path = d_path(&vma->vm_file->f_path, buf, sizeof(buf));
+					if (IS_ERR(path)) {
+						snprintf(buf, sizeof(buf), "<error:%ld>", PTR_ERR(path));
+						path = buf;
+					}
+				}
+
+				vma_pgoff = (unsigned long)vma->vm_pgoff << PAGE_SHIFT;
+				trace_page_fault_filt(addr, faulting_pc, vma->vm_start, vma->vm_end, vma_pgoff, log_flags, dev, ino, path);
+			}
+		}
+	}
+
+	return fault;
 
 check_stack:
 	if (vma->vm_flags & VM_GROWSDOWN && !expand_stack(vma, addr))
@@ -367,7 +408,7 @@ retry:
 #endif
 	}
 
-	fault = __do_page_fault(mm, addr, mm_flags, vm_flags, tsk);
+	fault = __do_page_fault(mm, addr, regs->pc, mm_flags, vm_flags, tsk);
 
 	/*
 	 * If we need to retry but a fatal signal is pending, handle the

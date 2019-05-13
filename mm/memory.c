@@ -2432,7 +2432,7 @@ static int do_wp_page(struct mm_struct *mm, struct vm_area_struct *vma,
 			    orig_pte, old_page);
 }
 
-static void unmap_mapping_range_vma(struct vm_area_struct *vma,
+void unmap_mapping_range_vma(struct vm_area_struct *vma,
 		unsigned long start_addr, unsigned long end_addr,
 		struct zap_details *details)
 {

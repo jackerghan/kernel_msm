@@ -119,6 +119,47 @@ TRACE_EVENT(kernel_panic_late,
 	TP_printk("dummy:%ld", __entry->dummy)
 );
 
+TRACE_EVENT(page_fault_filt,
+
+       TP_PROTO(unsigned long addr, unsigned long faulting_pc, unsigned long vma_start, unsigned long vma_end, unsigned long vma_pgoff, unsigned int flags, dev_t dev, ino_t ino, char* path),
+
+       TP_ARGS(addr, faulting_pc, vma_start, vma_end, vma_pgoff, flags, dev, ino, path),
+
+       TP_STRUCT__entry(
+				 			 __field( unsigned long, addr )
+							 __field( unsigned long, faulting_pc )
+							 __field( unsigned long, vma_start )
+							 __field( unsigned long, vma_end )
+							 __field( unsigned long, vma_pgoff )
+				 			 __field( unsigned int, flags )
+							 __field( dev_t, dev )
+							 __field( ino_t, ino )
+							 __string( path,	path	)
+       ),
+
+       TP_fast_assign(
+				 			 __entry->addr = addr;
+							 __entry->faulting_pc = faulting_pc;
+							 __entry->vma_start = vma_start;
+							 __entry->vma_end = vma_end;
+							 __entry->vma_pgoff = vma_pgoff;
+							 __entry->flags = flags;
+							 __entry->dev = dev;
+							 __entry->ino = ino;
+							 __assign_str( path, path );
+       ),
+
+       TP_printk("%lx %lx %lx %lx %lx %x %d,%d %lu [%s]",
+			 					 __entry->addr,
+								 __entry->faulting_pc,
+								 __entry->vma_start,
+								 __entry->vma_end,
+								 __entry->vma_pgoff,
+								 __entry->flags,
+								 MAJOR(__entry->dev), MINOR(__entry->dev),
+								 (unsigned long)__entry->ino, __get_str(path))
+);
+
 #endif
 
 #include <trace/define_trace.h>
