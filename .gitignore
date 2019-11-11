@@ -9,34 +9,14 @@
 #
 # Normal rules
 #
+
+# Ignore out, but not other changes, so the toolchain can be under the kernel directory
+# and if its .o/.a files get cleaned by a bad call to make mrproper, you'll be able to tell.
+out
+
 .*
-*.o
-*.o.*
-*.a
-*.s
-*.ko
-*.so
-*.so.dbg
-*.mod.c
-*.i
-*.lst
-*.symtypes
-*.order
-*.elf
-*.bin
-*.tar
-*.gz
-*.bz2
-*.lzma
-*.xz
-*.lz4
-*.lzo
-*.patch
-*.gcno
 modules.builtin
 Module.symvers
-*.dwo
-*.su
 
 #
 # Top-level generic files

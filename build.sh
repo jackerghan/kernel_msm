@@ -25,7 +25,7 @@ fi
 
 pushd $SCRIPT_DIR
 if [ $cleanBuild != 0 ]; then
-  make mrproper
+  make O=out mrproper
   make -j$(nproc --all) ARCH=arm64 O=out wahoo_defconfig
 fi
 
