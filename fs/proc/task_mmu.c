@@ -600,6 +600,79 @@ static int smaps_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
 	return 0;
 }
 
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+#error TODO Need to support CONFIG_TRANSPARENT_HUGEPAGE for pssmap
+#endif
+
+union pssmap_range_flags {
+	unsigned int value;
+	struct {
+		unsigned int dirty:1;
+		unsigned int anon:1;
+		unsigned int reserved:6;
+		unsigned int mapcount:24;
+	};
+};
+
+static void pssmap_maybe_output_range(struct seq_file *m,
+		long start_addr, unsigned long end_addr, union pssmap_range_flags flags)
+{
+	if (flags.value == 0) {
+		return;
+	}
+
+	// We try to keep the output compact.
+	seq_printf(
+			m,
+			"%lx,%x,%x\n",
+			start_addr / PAGE_SIZE,
+			(unsigned int)((end_addr - start_addr) / PAGE_SIZE),
+			flags.value);
+}
+
+static int pssmap_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
+		struct mm_walk *walk)
+{
+	pte_t *pte;
+	spinlock_t *ptl;
+	struct page *page;
+	struct vm_area_struct *vma = walk->vma;
+	struct seq_file *m = walk->private;
+
+	union pssmap_range_flags range_flags = {0};
+	unsigned long range_start_addr = 0;
+
+	/*
+	 * The mmap_sem held all the way back in m_start() is what
+	 * keeps khugepaged out of here and from collapsing things
+	 * in here.
+	 */
+	pte = pte_offset_map_lock(vma->vm_mm, pmd, addr, &ptl);
+	for (; addr != end; pte++, addr += PAGE_SIZE) {
+		union pssmap_range_flags page_flags = {0};
+		if (pte_present(*pte)) {
+			page = vm_normal_page(vma, addr, *pte);
+			if (page) {
+				page_flags.mapcount = page_mapcount(page);
+				page_flags.dirty = pte_dirty(*pte) || PageDirty(page);
+				page_flags.anon = !!PageAnon(page);
+			}
+		}
+
+		if (page_flags.value != range_flags.value) {
+			pssmap_maybe_output_range(m, range_start_addr, addr, range_flags);
+			range_flags.value = page_flags.value;
+			range_start_addr = addr;
+		}
+	}
+	pte_unmap_unlock(pte - 1, ptl);
+	cond_resched();
+
+	pssmap_maybe_output_range(m, range_start_addr, addr, range_flags);
+
+	return 0;
+}
+
 static void show_smap_vma_flags(struct seq_file *m, struct vm_area_struct *vma)
 {
 	/*
@@ -730,6 +803,27 @@ static int show_tid_smap(struct seq_file *m, void *v)
 	return show_smap(m, v, 0);
 }
 
+static int show_pid_pssmap(struct seq_file *m, void *v)
+{
+	struct proc_maps_private *priv = m->private;
+	struct vm_area_struct *vma = v;
+	bool last_vma = !m_next_vma(priv, vma);
+
+	struct mm_walk smaps_walk = {
+		.pmd_entry = pssmap_pte_range,
+		.mm = vma->vm_mm,
+		.private = m,
+	};
+
+	/* mmap_sem is held in m_start */
+	walk_page_vma(vma, &smaps_walk);
+
+	m_cache_vma(m, vma);
+
+	return 0;
+}
+
+
 static const struct seq_operations proc_pid_smaps_op = {
 	.start	= m_start,
 	.next	= m_next,
@@ -744,6 +838,13 @@ static const struct seq_operations proc_tid_smaps_op = {
 	.show	= show_tid_smap
 };
 
+static const struct seq_operations proc_pid_pssmap_op = {
+	.start	= m_start,
+	.next	= m_next,
+	.stop	= m_stop,
+	.show	= show_pid_pssmap
+};
+
 static int pid_smaps_open(struct inode *inode, struct file *file)
 {
 	return do_maps_open(inode, file, &proc_pid_smaps_op);
@@ -752,6 +853,11 @@ static int pid_smaps_open(struct inode *inode, struct file *file)
 static int tid_smaps_open(struct inode *inode, struct file *file)
 {
 	return do_maps_open(inode, file, &proc_tid_smaps_op);
+}
+
+static int pid_pssmap_open(struct inode *inode, struct file *file)
+{
+	return do_maps_open(inode, file, &proc_pid_pssmap_op);
 }
 
 const struct file_operations proc_pid_smaps_operations = {
@@ -763,6 +869,13 @@ const struct file_operations proc_pid_smaps_operations = {
 
 const struct file_operations proc_tid_smaps_operations = {
 	.open		= tid_smaps_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= proc_map_release,
+};
+
+const struct file_operations proc_pid_pssmap_operations = {
+	.open		= pid_pssmap_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
 	.release	= proc_map_release,

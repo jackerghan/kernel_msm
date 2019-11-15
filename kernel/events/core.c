@@ -47,6 +47,9 @@
 
 #include <asm/irq_regs.h>
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/mm.h>
+
 static struct workqueue_struct *perf_wq;
 
 struct remote_function_call {
@@ -5603,6 +5606,37 @@ out:
 	mmap_event->event_id.header.size = size;
 }
 
+char *get_anon_name(struct vm_area_struct *vma)
+{
+	char *name;
+	if (vma->vm_ops && vma->vm_ops->name) {
+		name = (char *) vma->vm_ops->name(vma);
+		if (name)
+			return name;
+	}
+
+	name = (char *)arch_vma_name(vma);
+	if (name)
+		return name;
+
+	if (vma->vm_mm) {
+		if (vma->vm_start <= vma->vm_mm->start_brk &&
+				vma->vm_end >= vma->vm_mm->brk) {
+			name = "[heap]";
+			return name;
+		}
+		
+		if (vma->vm_start <= vma->vm_mm->start_stack &&
+				vma->vm_end >= vma->vm_mm->start_stack) {
+			name = "[stack]";
+			return name;
+		}
+	}
+
+	name = "//anon";
+	return name;
+}
+
 static void perf_event_mmap_event(struct perf_mmap_event *mmap_event)
 {
 	struct vm_area_struct *vma = mmap_event->vma;
@@ -5664,28 +5698,7 @@ static void perf_event_mmap_event(struct perf_mmap_event *mmap_event)
 
 		goto got_name;
 	} else {
-		if (vma->vm_ops && vma->vm_ops->name) {
-			name = (char *) vma->vm_ops->name(vma);
-			if (name)
-				goto cpy_name;
-		}
-
-		name = (char *)arch_vma_name(vma);
-		if (name)
-			goto cpy_name;
-
-		if (vma->vm_start <= vma->vm_mm->start_brk &&
-				vma->vm_end >= vma->vm_mm->brk) {
-			name = "[heap]";
-			goto cpy_name;
-		}
-		if (vma->vm_start <= vma->vm_mm->start_stack &&
-				vma->vm_end >= vma->vm_mm->start_stack) {
-			name = "[stack]";
-			goto cpy_name;
-		}
-
-		name = "//anon";
+		name = get_anon_name(vma);
 		goto cpy_name;
 	}
 
@@ -5726,6 +5739,27 @@ got_name:
 void perf_event_mmap(struct vm_area_struct *vma)
 {
 	struct perf_mmap_event mmap_event;
+
+	if (atomic_read(&__tracepoint_mmap.key.enabled) > 0) {
+		char buf[256];
+		char *name = NULL;
+		dev_t dev = 0;
+		ino_t ino = 0;
+		struct file *file = vma->vm_file;
+		if (file) {
+			struct inode *inode = file_inode(file);
+			dev = inode->i_sb->s_dev;
+			ino = inode->i_ino;
+			name = d_path(&file->f_path, buf, sizeof(buf));
+			if (IS_ERR(name)) {
+				snprintf(buf, sizeof(buf), "<error:%ld>", PTR_ERR(name));
+				name = buf;
+			}
+		} else {
+			name = get_anon_name(vma);
+		}
+		trace_mmap(vma, dev, ino, name);
+	}
 
 	if (!atomic_read(&nr_mmap_events))
 		return;
