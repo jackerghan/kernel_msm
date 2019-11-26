@@ -227,6 +227,18 @@ ssize_t seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 		if (!size)
 			goto Done;
 	}
+	/*
+	 * If the reader is passing in a big buffer to avoid restarts due to overflow,
+	 * e.g. when walking vmas and indices are not stable, make sure our buffer
+	 * matches in size.
+	 */
+	if ((m->size < size) && (size >= 512 * 1024)) {
+		kvfree(m->buf);
+		m->buf = seq_buf_alloc(size);
+		if (!m->buf)
+			goto Enomem;
+		m->size = size;
+	}
 	/* we need at least one record in buffer */
 	pos = m->index;
 	p = m->op->start(m, &pos);
