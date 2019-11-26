@@ -903,7 +903,6 @@ static int show_pid_pssmap(struct seq_file *m, void *v)
 {
 	struct proc_maps_private *priv = m->private;
 	struct vm_area_struct *vma = v;
-	bool last_vma = !m_next_vma(priv, vma);
 
 	struct mm_walk smaps_walk = {
 		.pmd_entry = pssmap_pte_range,
