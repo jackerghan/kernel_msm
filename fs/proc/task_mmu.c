@@ -701,14 +701,20 @@ static void pssmap_maybe_output_range(struct seq_file *m,
 			flags.value);
 }
 
+struct pssmap_walk_context {
+	struct seq_file *m;
+	struct vm_area_struct *vma;
+};
+
 static int pssmap_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
 		struct mm_walk *walk)
 {
 	pte_t *pte;
 	spinlock_t *ptl;
 	struct page *page;
-	struct vm_area_struct *vma = walk->vma;
-	struct seq_file *m = walk->private;
+	struct pssmap_walk_context *context = walk->private;
+	struct vm_area_struct *vma = context->vma;
+	struct seq_file *m = context->m;
 
 	union pssmap_range_flags range_flags = {0};
 	unsigned long range_start_addr = 0;
@@ -951,18 +957,21 @@ static int show_tid_smap(struct seq_file *m, void *v)
 
 static int show_pid_pssmap(struct seq_file *m, void *v)
 {
-	struct proc_maps_private *priv = m->private;
 	struct vm_area_struct *vma = v;
-	bool last_vma = !m_next_vma(priv, vma);
 
+	struct pssmap_walk_context context = {};
 	struct mm_walk smaps_walk = {
 		.pmd_entry = pssmap_pte_range,
 		.mm = vma->vm_mm,
-		.private = m,
+		.private = &context,
 	};
 
+	context.vma = vma;
+	context.m = m;
+
 	/* mmap_sem is held in m_start */
-	walk_page_vma(vma, &smaps_walk);
+	if (vma->vm_mm && !is_vm_hugetlb_page(vma))
+		walk_page_range(vma->vm_start, vma->vm_end, &smaps_walk);
 
 	m_cache_vma(m, vma);
 

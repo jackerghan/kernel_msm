@@ -65,6 +65,8 @@
 #include <asm/io.h>
 #include <asm/unistd.h>
 
+#include <trace/events/mm.h>
+
 #ifndef SET_UNALIGN_CTL
 # define SET_UNALIGN_CTL(a, b)	(-EINVAL)
 #endif
@@ -2190,6 +2192,8 @@ static int prctl_set_vma_anon_name(unsigned long start, unsigned long end,
 	}
 }
 
+char *copy_user_anon_name(struct mm_struct *mm, const char __user *name, char *buffer, int buffer_max);
+
 static int prctl_set_vma(unsigned long opt, unsigned long start,
 		unsigned long len_in, unsigned long arg)
 {
@@ -2217,6 +2221,15 @@ static int prctl_set_vma(unsigned long opt, unsigned long start,
 
 	switch (opt) {
 	case PR_SET_VMA_ANON_NAME:
+		if (atomic_read(&__tracepoint_set_anon_name.key.enabled) > 0) {
+			char buffer[256];
+			if (arg == 0) {
+				strcpy(buffer, "[anon:null]");
+			} else {
+				copy_user_anon_name(mm, (const char __user *)arg, buffer, sizeof(buffer));
+			}
+			trace_set_anon_name(start, end, buffer);
+		}
 		error = prctl_set_vma_anon_name(start, end, arg);
 		break;
 	default:
