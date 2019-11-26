@@ -47,6 +47,7 @@
 
 #include <asm/irq_regs.h>
 
+#include <linux/highmem.h>
 #define CREATE_TRACE_POINTS
 #include <trace/events/mm.h>
 
@@ -5606,11 +5607,80 @@ out:
 	mmap_event->event_id.header.size = size;
 }
 
-char *get_anon_name(struct vm_area_struct *vma)
+char *copy_user_anon_name(struct mm_struct *mm, const char __user *name, char *buffer, int buffer_max)
 {
+	unsigned long page_start_vaddr;
+	unsigned long page_offset;
+	unsigned long num_pages;
+	unsigned long max_len = (unsigned long)buffer_max;
+	int i;
+
+	page_start_vaddr = (unsigned long)name & PAGE_MASK;
+	page_offset = (unsigned long)name - page_start_vaddr;
+	num_pages = DIV_ROUND_UP(page_offset + max_len, PAGE_SIZE);
+
+	// Linux should have an efficient strcat that returns updated end and
+	// remaining size, but it does not... So this is slower than it needs to be.
+	buffer[0] = 0;
+	strlcat(buffer, "[anon:", buffer_max);
+
+	for (i = 0; i < num_pages; i++) {
+		int len;
+		int write_len;
+		const char *kaddr;
+		long pages_pinned;
+		struct page *page;
+		char *buf_pos;
+		int buf_len;
+		int buf_remaining;
+
+		pages_pinned = get_user_pages(current, mm, page_start_vaddr,
+				1, 0, 0, &page, NULL);
+		if (pages_pinned < 1) {
+			strlcat(buffer, "<fault>]", buffer_max);
+			return buffer;
+		}
+
+		kaddr = (const char *)kmap(page);
+		len = (int)min(max_len, PAGE_SIZE - page_offset);
+		write_len = strnlen(kaddr + page_offset, len);
+		buf_len = strlen(buffer);
+		buf_remaining = buffer_max - buf_len - 1; // Make sure we'll have room for NUL.
+		buf_pos = buffer + buf_len;
+		strncat(buf_pos, kaddr + page_offset, min(write_len, buf_remaining));
+		kunmap(page);
+		put_page(page);
+
+		// if strnlen hit a null terminator then we're done
+		if (write_len < len)
+			break;
+
+		// Similarly, if we don't have any more room in the buffer, we're done
+		if (write_len >= buf_remaining) {
+			break;
+		}
+
+		page_offset = 0;
+		page_start_vaddr += PAGE_SIZE;
+	}
+
+	strlcat(buffer, "]", buffer_max);
+	return buffer;
+}
+
+char *copy_vma_anon_name(struct vm_area_struct *vma, char *buffer, int buffer_max)
+{
+	const char __user *name = vma_get_anon_name(vma);
+	struct mm_struct *mm = vma->vm_mm;
+	return copy_user_anon_name(mm, name, buffer, buffer_max);
+}
+
+char *get_anon_name(struct vm_area_struct *vma, char *buffer, int buffer_max)
+{
+	struct mm_struct *mm = vma->vm_mm;
 	char *name;
 	if (vma->vm_ops && vma->vm_ops->name) {
-		name = (char *) vma->vm_ops->name(vma);
+		name = (char *)vma->vm_ops->name(vma);
 		if (name)
 			return name;
 	}
@@ -5619,21 +5689,29 @@ char *get_anon_name(struct vm_area_struct *vma)
 	if (name)
 		return name;
 
-	if (vma->vm_mm) {
-		if (vma->vm_start <= vma->vm_mm->start_brk &&
-				vma->vm_end >= vma->vm_mm->brk) {
+	if (!mm) {
+		name = "[vdso]";
+		return name;
+	} else {
+		if (vma->vm_start <= mm->brk &&
+		    vma->vm_end >= mm->start_brk) {
 			name = "[heap]";
 			return name;
 		}
 		
-		if (vma->vm_start <= vma->vm_mm->start_stack &&
-				vma->vm_end >= vma->vm_mm->start_stack) {
+		if (vma->vm_start <= mm->start_stack &&
+				vma->vm_end >= mm->start_stack) {
 			name = "[stack]";
 			return name;
 		}
 	}
 
-	name = "//anon";
+	if (vma_get_anon_name(vma)) {
+		name = copy_vma_anon_name(vma, buffer, buffer_max);
+		return name;
+	}
+
+	name = "[anon:noname]";
 	return name;
 }
 
@@ -5698,7 +5776,28 @@ static void perf_event_mmap_event(struct perf_mmap_event *mmap_event)
 
 		goto got_name;
 	} else {
-		name = get_anon_name(vma);
+		if (vma->vm_ops && vma->vm_ops->name) {
+			name = (char *) vma->vm_ops->name(vma);
+			if (name)
+				goto cpy_name;
+		}
+
+		name = (char *)arch_vma_name(vma);
+		if (name)
+			goto cpy_name;
+
+		if (vma->vm_start <= vma->vm_mm->start_brk &&
+				vma->vm_end >= vma->vm_mm->brk) {
+			name = "[heap]";
+			goto cpy_name;
+		}
+		if (vma->vm_start <= vma->vm_mm->start_stack &&
+				vma->vm_end >= vma->vm_mm->start_stack) {
+			name = "[stack]";
+			goto cpy_name;
+		}
+
+		name = "//anon";
 		goto cpy_name;
 	}
 
@@ -5756,7 +5855,7 @@ void perf_event_mmap(struct vm_area_struct *vma)
 				name = buf;
 			}
 		} else {
-			name = get_anon_name(vma);
+			name = get_anon_name(vma, buf, sizeof(buf));
 		}
 		trace_mmap(vma, dev, ino, name);
 	}

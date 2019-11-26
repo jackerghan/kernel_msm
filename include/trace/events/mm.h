@@ -31,17 +31,49 @@ TRACE_EVENT(mmap,
 		__entry->vm_start	= vma->vm_start;
 		__entry->vm_end	= vma->vm_end;
 		__entry->vm_pgoff = ((unsigned long)vma->vm_pgoff) << PAGE_SHIFT;
+		if (__entry->vm_pgoff == __entry->vm_start) {
+			__entry->vm_pgoff = 0;
+		}
+		__entry->vm_flags	= vma->vm_flags;
 		__entry->dev = dev;
 		__entry->ino = ino;
 		__assign_str( name, name );
 	),
 
-	TP_printk("%lx %lx %lx %d,%d %lu [%s]",
+	TP_printk("%lx %lx %lx %lx %d,%d %lu [%s]",
 						__entry->vm_start,
 						__entry->vm_end,
 						__entry->vm_pgoff,
+						__entry->vm_flags,
 						MAJOR(__entry->dev), MINOR(__entry->dev),
 						(unsigned long)__entry->ino,
+						__get_str(name))
+);
+
+/*
+ * Tracepoint for calling set_anon_name:
+ */
+TRACE_EVENT(set_anon_name,
+
+	TP_PROTO(long start, long end, char* name),
+
+	TP_ARGS(start, end, name),
+
+	TP_STRUCT__entry(
+		__field( unsigned long,	start)
+		__field( unsigned long,	end)
+		__string( name,	name	)
+	),
+
+	TP_fast_assign(
+		__entry->start	= start;
+		__entry->end	= end;
+		__assign_str( name, name );
+	),
+
+	TP_printk("%lx %lx [%s]",
+						__entry->start,
+						__entry->end,
 						__get_str(name))
 );
 
